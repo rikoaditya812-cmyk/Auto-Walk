@@ -1169,7 +1169,7 @@ end
 
 -- Update speed button visuals
 function GUI.UpdateSpeedButtons()
-    if not GUI.SpeedButtons then return end
+    if not GUI or not GUI.SpeedButtons then return end
     
     for speed, btn in pairs(GUI.SpeedButtons) do
         if speed == Config.playbackSpeed then
@@ -1219,13 +1219,13 @@ end
 -- UI UPDATE FUNCTIONS
 -- ════════════════════════════════════════════════════════════
 function updateStatus(text)
-    if GUI.StatusLabel then
+    if GUI and GUI.StatusLabel then
         GUI.StatusLabel.Text = text
     end
 end
 
 function updateUI()
-    if GUI.InfoLabel then
+    if GUI and GUI.InfoLabel then
         GUI.InfoLabel.Text = string.format("Frames: %d / %d | Time: %s | Speed: %.1fx", 
             Recording.currentIndex, 
             #Recording.frames,
@@ -1233,7 +1233,7 @@ function updateUI()
             Config.playbackSpeed)
     end
     
-    if GUI.ProgressBar and #Recording.frames > 0 then
+    if GUI and GUI.ProgressBar and #Recording.frames > 0 then
         local progress = Recording.currentIndex / #Recording.frames
         GUI.ProgressBar:TweenSize(
             UDim2.new(math.clamp(progress, 0, 1), 0, 1, 0),
@@ -1248,22 +1248,34 @@ end
 -- ════════════════════════════════════════════════════════════
 -- INITIALIZE UI
 -- ════════════════════════════════════════════════════════════
-local mainGUI = GUI.Create()
-GUI.MakeDraggable(GUI.Main)
-GUI.MakeDraggable(GUI.MiniIcon)
-
--- TAB CLICK HANDLERS
-GUI.RecordTab.MouseButton1Click:Connect(function()
-    GUI.SwitchToRecord()
+print("[INIT] Creating GUI...")
+local success, err = pcall(function()
+    local mainGUI = GUI.Create()
+    GUI.MakeDraggable(GUI.Main)
+    GUI.MakeDraggable(GUI.MiniIcon)
+    
+    -- TAB CLICK HANDLERS
+    GUI.RecordTab.MouseButton1Click:Connect(function()
+        GUI.SwitchToRecord()
+    end)
+    
+    GUI.ReplayTab.MouseButton1Click:Connect(function()
+        GUI.SwitchToReplay()
+    end)
+    
+    print("[INIT] GUI created successfully!")
 end)
 
-GUI.ReplayTab.MouseButton1Click:Connect(function()
-    GUI.SwitchToReplay()
-end)
+if not success then
+    warn("[ERROR] Failed to create GUI: " .. tostring(err))
+    notify("Error", "Failed to create GUI!")
+    return
+end
 
 -- ════════════════════════════════════════════════════════════
 -- RECORD PAGE BUTTONS
 -- ════════════════════════════════════════════════════════════
+print("[INIT] Creating Record page buttons...")
 GUI.CreateButton("⏺ Record / Stop (R)", Color3.fromRGB(220, 50, 50), function()
     if State.recording then
         RecordModule.Stop()
@@ -1291,6 +1303,7 @@ end, GUI.RecordPage)
 -- ════════════════════════════════════════════════════════════
 -- REPLAY PAGE BUTTONS
 -- ════════════════════════════════════════════════════════════
+print("[INIT] Creating Replay page buttons...")
 GUI.CreateButton("📥 Load Recording", Color3.fromRGB(0, 200, 150), function()
     SaveModule.LoadFromFile()
 end, GUI.ReplayPage)
@@ -1326,6 +1339,7 @@ speedLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 speedLayout.Padding = UDim.new(0, 3)
 
 -- CREATE SPEED BUTTONS
+print("[INIT] Creating speed buttons...")
 GUI.SpeedButtons = {}
 local speeds = {0.5, 0.9, 1.0, 1.5}
 
@@ -1335,6 +1349,7 @@ for _, speed in ipairs(speeds) do
 end
 
 GUI.UpdateSpeedButtons()
+print("[INIT] Speed buttons created!")
 
 -- ════════════════════════════════════════════════════════════
 -- KEYBINDS
