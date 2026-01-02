@@ -24,7 +24,8 @@ local State = {
 local Config = {
     recordRate = 0.05,
     rewindStep = 25,
-    playbackSpeed = 1.0
+    playbackSpeed = 1.0,
+    autoLoop = false  -- Auto replay when finished
 }
 
 local Recording = {
@@ -297,10 +298,18 @@ function ReplayModule.Play()
         local targetFrame = math.floor(elapsed / frameTime) + 1
         
         if targetFrame > #Recording.frames then
-            State.replaying = false
-            notify("Complete", "Replay finished!")
-            updateStatus("✅ Complete")
-            updateUI()
+            -- Check if auto loop is enabled
+            if Config.autoLoop then
+                Recording.currentIndex = 1
+                startTick = tick()
+                notify("Loop", "Restarting replay!")
+                print("[LOOP] Auto-restarting from frame 1")
+            else
+                State.replaying = false
+                notify("Complete", "Replay finished!")
+                updateStatus("✅ Complete")
+                updateUI()
+            end
             return
         end
         
@@ -311,6 +320,8 @@ function ReplayModule.Play()
         local nextFrame = Recording.frames[math.min(targetFrame + 1, #Recording.frames)]
         
         if frame then
+            if frame.state and frame.state ~= Enum.HumanoidStateType.        if frame then
+            -- 1. Set humanoid state untuk animasi yang benar
             if frame.state and frame.state ~= Enum.HumanoidStateType.None then
                 local currentState = hum:GetState()
                 if currentState ~= frame.state then
@@ -1151,7 +1162,6 @@ function GUI.CreateSpeedButton(speed, parent)
     
     btn.MouseButton1Click:Connect(function()
         SpeedModule.SetSpeed(speed)
-        GUI.UpdateSpeedButtons()
     end)
     
     return btn
@@ -1317,7 +1327,7 @@ speedLayout.Padding = UDim.new(0, 3)
 
 -- CREATE SPEED BUTTONS
 GUI.SpeedButtons = {}
-local speeds = {0.5, 0.75, 1.0, 1.5}
+local speeds = {0.5, 0.9, 1.0, 1.5}
 
 for _, speed in ipairs(speeds) do
     local btn = GUI.CreateSpeedButton(speed, speedContainer)
@@ -1424,8 +1434,9 @@ print("║  Ctrl+S    = Quick Save                           ║")
 print("╠═══════════════════════════════════════════════════╣")
 print("║  NEW FEATURES:                                    ║")
 print("║  ✅ Tab-based UI (Record / Replay)                ║")
-print("║  ✅ Speed selector buttons (0.5x - 1.5x)          ║")
-print("║  ✅ Pause only available in Record mode           ║")
+print("║  ✅ Speed selector: 0.5x, 0.9x, 1x, 1.5x          ║")
+print("║  ✅ Auto-loop toggle button                       ║")
+print("║  ✅ Smoother interpolation (smoothstep)           ║")
 print("║  ✅ Smart start position detection                ║")
 print("╠═══════════════════════════════════════════════════╣")
 print("║  EXECUTOR COMPATIBILITY:                          ║")
