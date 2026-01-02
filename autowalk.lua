@@ -1,5 +1,5 @@
 -- ╔═══════════════════════════════════════════════════════════╗
--- ║  SMOOTH AUTO WALK V6.2 - TAB SYSTEM                     ║
+-- ║  SMOOTH AUTO WALK V6.2 - TAB SYSTEM + LOOP             ║
 -- ║  Real smooth walking with proper foot grounding          ║
 -- ╚═══════════════════════════════════════════════════════════╝
 
@@ -406,8 +406,8 @@ local SpeedModule = {}
 
 function SpeedModule.SetSpeed(multiplier)
     Config.playbackSpeed = math.clamp(multiplier, 0.25, 3.0)
-    notify("Speed", string.format("%.2fx", Config.playbackSpeed))
-    print(string.format("[SPEED] Playback speed set to %.2fx", Config.playbackSpeed))
+    notify("Speed", string.format("%.1fx", Config.playbackSpeed))
+    print(string.format("[SPEED] Playback speed set to %.1fx", Config.playbackSpeed))
     GUI.UpdateSpeedButtons()
     updateUI()
 end
@@ -1226,7 +1226,7 @@ end
 
 function updateUI()
     if GUI.InfoLabel then
-        GUI.InfoLabel.Text = string.format("Frames: %d / %d | Time: %s | Speed: %.2fx", 
+        GUI.InfoLabel.Text = string.format("Frames: %d / %d | Time: %s | Speed: %.1fx", 
             Recording.currentIndex, 
             #Recording.frames,
             formatTime(#Recording.frames),
@@ -1420,7 +1420,7 @@ updateStatus("⏹ Ready")
 updateUI()
 
 print("╔═══════════════════════════════════════════════════╗")
-print("║  SMOOTH AUTO WALK V6.2 - TAB SYSTEM             ║")
+print("║  SMOOTH AUTO WALK V6.2 - TAB + LOOP             ║")
 print("╠═══════════════════════════════════════════════════╣")
 print("║  KEYBINDS:                                        ║")
 print("║  R         = Record/Stop                          ║")
