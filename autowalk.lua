@@ -1,5 +1,5 @@
 -- ╔═══════════════════════════════════════════════════════════╗
--- ║  SMOOTH AUTO WALK V6.1 - FIXED LOAD FILE                ║
+-- ║  SMOOTH AUTO WALK V6.2 - TAB SYSTEM                     ║
 -- ║  Real smooth walking with proper foot grounding          ║
 -- ╚═══════════════════════════════════════════════════════════╝
 
@@ -18,13 +18,13 @@ local State = {
     replaying = false,
     paused = false,
     guiVisible = true,
-    waitingForMovement = false  -- Flag untuk nunggu movement setelah rewind
+    waitingForMovement = false
 }
 
 local Config = {
-    recordRate = 0.05,       -- 0.05 second per frame (20 fps) - lebih smooth
-    rewindStep = 25,         -- Mundur 25 frames
-    playbackSpeed = 1.0      -- 1.0 = normal, 0.5 = half speed, 2.0 = double speed
+    recordRate = 0.05,
+    rewindStep = 25,
+    playbackSpeed = 1.0
 }
 
 local Recording = {
@@ -36,11 +36,10 @@ local SaveFolder = "AutoWalkRecordings"
 
 -- Auto-detect executor workspace path
 local function getWorkspacePath()
-    -- Try different executor paths
     local paths = {
-        "AutoWalkRecordings",  -- Default
-        "/storage/emulated/0/Delta/Workspace/AutoWalkRecordings",  -- Delta Android
-        "workspace/AutoWalkRecordings",  -- Some executors
+        "AutoWalkRecordings",
+        "/storage/emulated/0/Delta/Workspace/AutoWalkRecordings",
+        "workspace/AutoWalkRecordings",
     }
     
     for _, path in ipairs(paths) do
@@ -55,7 +54,7 @@ local function getWorkspacePath()
         end
     end
     
-    return "AutoWalkRecordings"  -- Fallback
+    return "AutoWalkRecordings"
 end
 
 -- ════════════════════════════════════════════════════════════
@@ -108,12 +107,9 @@ function RecordModule.Start()
     State.recording = true
     State.paused = false
     
-    -- Jika mulai fresh recording, set index ke akhir
     if Recording.currentIndex == 0 or Recording.currentIndex >= #Recording.frames then
         Recording.currentIndex = #Recording.frames
     end
-    -- Jika ada rewind sebelumnya (currentIndex < total frames), 
-    -- biarkan saja - nanti akan di-handle saat resume
     
     notify("Recording", "Started!")
     updateStatus("🔴 RECORDING")
@@ -130,24 +126,20 @@ function RecordModule.Start()
             hum = getHum()
             if not hrp or not hum then break end
             
-            -- CEK: Kalau lagi waiting for movement (setelah rewind)
             if State.waitingForMovement then
                 local isMoving = hrp.AssemblyLinearVelocity.Magnitude > 1 or 
                                 hum.MoveDirection.Magnitude > 0.1
                 
                 if isMoving then
-                    -- Character mulai gerak! Lanjut recording!
                     State.waitingForMovement = false
                     updateStatus("🔴 RECORDING")
                     notify("Recording!", "Movement detected!")
                 else
-                    -- Masih diam, skip frame ini
                     task.wait(Config.recordRate)
                     continue
                 end
             end
             
-            -- Capture state dengan info humanoid state
             local frame = {
                 cf = hrp.CFrame,
                 vel = hrp.AssemblyLinearVelocity,
@@ -186,20 +178,15 @@ function RecordModule.TogglePause()
         updateStatus("⏸ PAUSED")
         notify("Paused", "Press Backspace to rewind")
     else
-        -- SAAT RESUME dari PAUSE
-        -- CEK: apakah ada rewind? (currentIndex < total frames)
         if Recording.currentIndex > 0 and Recording.currentIndex < #Recording.frames then
-            -- HAPUS semua frame SETELAH currentIndex
             local deletedCount = #Recording.frames - Recording.currentIndex
             
-            -- Hapus dari belakang
             for i = #Recording.frames, Recording.currentIndex + 1, -1 do
                 table.remove(Recording.frames, i)
             end
             
             notify("Overwrite!", string.format("Deleted %d frames", deletedCount))
             
-            -- SET FLAG: Tunggu sampai character mulai gerak baru record!
             State.waitingForMovement = true
             updateStatus("⏳ WAITING...")
             notify("Get Ready!", "Start moving to continue recording")
@@ -220,7 +207,7 @@ function RecordModule.Clear()
 end
 
 -- ════════════════════════════════════════════════════════════
--- REPLAY MODULE (BALANCED SMOOTH & NATURAL + SMART START)
+-- REPLAY MODULE
 -- ════════════════════════════════════════════════════════════
 local ReplayModule = {}
 local replayConnection = nil
@@ -235,7 +222,6 @@ function ReplayModule.FindClosestFrame()
     local closestFrame = 1
     local closestDistance = math.huge
     
-    -- Cari frame terdekat dengan posisi character sekarang
     for i, frame in ipairs(Recording.frames) do
         local framePos = frame.cf.Position
         local distance = (currentPos - framePos).Magnitude
@@ -267,11 +253,8 @@ function ReplayModule.Play()
     State.replaying = true
     State.paused = false
     
-    -- SMART START: Cari frame terdekat dengan posisi sekarang
     local startFrame, distance = ReplayModule.FindClosestFrame()
     
-    -- Kalau jaraknya dekat (<50 studs), mulai dari situ
-    -- Kalau jauh, mulai dari awal
     if distance < 50 then
         Recording.currentIndex = startFrame
         notify("Smart Start", string.format("Frame %d/%d (%.1fm away)", startFrame, #Recording.frames, distance))
@@ -285,8 +268,7 @@ function ReplayModule.Play()
     updateStatus("▶ PLAYING")
     
     local startTick = tick()
-    local frameTime = Config.recordRate / Config.playbackSpeed  -- Apply playback speed
-    -- Adjust start time based on current frame
+    local frameTime = Config.recordRate / Config.playbackSpeed
     startTick = startTick - ((Recording.currentIndex - 1) * frameTime)
     
     if replayConnection then
@@ -322,7 +304,6 @@ function ReplayModule.Play()
             return
         end
         
-        -- CLAMP targetFrame supaya tidak keluar batas
         targetFrame = math.clamp(targetFrame, 1, #Recording.frames)
         Recording.currentIndex = targetFrame
         
@@ -330,10 +311,8 @@ function ReplayModule.Play()
         local nextFrame = Recording.frames[math.min(targetFrame + 1, #Recording.frames)]
         
         if frame then
-            -- 1. Set humanoid state untuk animasi yang benar
             if frame.state and frame.state ~= Enum.HumanoidStateType.None then
                 local currentState = hum:GetState()
-                -- Only change state if different to prevent jittering
                 if currentState ~= frame.state then
                     pcall(function()
                         hum:ChangeState(frame.state)
@@ -341,28 +320,23 @@ function ReplayModule.Play()
                 end
             end
             
-            -- 2. Set move direction SEBELUM movement (penting untuk animasi!)
             if frame.moveDir and frame.moveDir.Magnitude > 0.05 then
                 hum:Move(frame.moveDir, true)
             else
                 hum:Move(Vector3.zero, true)
             end
             
-            -- 3. HYBRID POSITIONING: Smooth lerp dengan ground snapping
             if nextFrame and targetFrame < #Recording.frames then
                 local progress = (elapsed % frameTime) / frameTime
                 
-                -- Smooth lerp untuk movement horizontal
                 local lerpedCF = frame.cf:Lerp(nextFrame.cf, progress)
                 
-                -- PENTING: Cek jika character sedang di ground (tidak jumping/falling)
                 local isGrounded = frame.state == Enum.HumanoidStateType.Running or 
                                   frame.state == Enum.HumanoidStateType.RunningNoPhysics or
                                   frame.state == Enum.HumanoidStateType.Climbing or
                                   frame.state == Enum.HumanoidStateType.Landed
                 
                 if isGrounded then
-                    -- Kalau di ground, pakai Y position exact (no lerp) untuk ground contact
                     local exactY = frame.cf.Position.Y
                     local lerpedPos = lerpedCF.Position
                     lerpedCF = CFrame.new(lerpedPos.X, exactY, lerpedPos.Z) * 
@@ -370,21 +344,16 @@ function ReplayModule.Play()
                 end
                 
                 hrp.CFrame = lerpedCF
-                
-                -- Velocity lerp yang smooth
                 hrp.AssemblyLinearVelocity = frame.vel:Lerp(nextFrame.vel, progress)
             else
-                -- Last frame atau single frame
                 hrp.CFrame = frame.cf
                 hrp.AssemblyLinearVelocity = frame.vel
             end
             
-            -- 4. Set walkspeed (dengan playback speed multiplier)
             if frame.speed then
                 hum.WalkSpeed = frame.speed * Config.playbackSpeed
             end
             
-            -- 5. Handle jump dengan smooth
             if frame.jump then
                 local currentState = hum:GetState()
                 if currentState ~= Enum.HumanoidStateType.Jumping and 
@@ -419,20 +388,6 @@ function ReplayModule.Stop()
     updateStatus("⏹ Stopped")
 end
 
-function ReplayModule.TogglePause()
-    if not State.replaying then return end
-    
-    State.paused = not State.paused
-    
-    if State.paused then
-        updateStatus("⏸ PAUSED")
-        notify("Paused", "Press to resume")
-    else
-        updateStatus("▶ PLAYING")
-        notify("Resumed", "Replay continues")
-    end
-end
-
 -- ════════════════════════════════════════════════════════════
 -- SPEED CONTROL MODULE
 -- ════════════════════════════════════════════════════════════
@@ -442,41 +397,8 @@ function SpeedModule.SetSpeed(multiplier)
     Config.playbackSpeed = math.clamp(multiplier, 0.25, 3.0)
     notify("Speed", string.format("%.2fx", Config.playbackSpeed))
     print(string.format("[SPEED] Playback speed set to %.2fx", Config.playbackSpeed))
+    GUI.UpdateSpeedButtons()
     updateUI()
-end
-
-function SpeedModule.Increase()
-    local speeds = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0}
-    local current = Config.playbackSpeed
-    
-    for i, speed in ipairs(speeds) do
-        if speed > current then
-            SpeedModule.SetSpeed(speed)
-            return
-        end
-    end
-    
-    -- Already at max
-    notify("Speed", "Max speed (3.0x)")
-end
-
-function SpeedModule.Decrease()
-    local speeds = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0}
-    local current = Config.playbackSpeed
-    
-    for i = #speeds, 1, -1 do
-        if speeds[i] < current then
-            SpeedModule.SetSpeed(speeds[i])
-            return
-        end
-    end
-    
-    -- Already at min
-    notify("Speed", "Min speed (0.25x)")
-end
-
-function SpeedModule.Reset()
-    SpeedModule.SetSpeed(1.0)
 end
 
 -- ════════════════════════════════════════════════════════════
@@ -490,13 +412,11 @@ function RewindModule.StepBack()
         return
     end
     
-    -- Hanya bisa rewind kalau recording PAUSED
     if not State.recording or not State.paused then
         notify("Warning", "Pause recording first!")
         return
     end
     
-    -- Mundur beberapa frame
     local oldIndex = Recording.currentIndex
     Recording.currentIndex = math.max(1, Recording.currentIndex - Config.rewindStep)
     
@@ -508,7 +428,6 @@ function RewindModule.StepBack()
             hrp.CFrame = frame.cf
             hrp.AssemblyLinearVelocity = Vector3.zero
             
-            -- Set state agar siap record lagi
             if frame.state then
                 hum:ChangeState(frame.state)
             end
@@ -525,7 +444,7 @@ function RewindModule.StepBack()
 end
 
 -- ════════════════════════════════════════════════════════════
--- SAVE/LOAD MODULE (FIXED)
+-- SAVE/LOAD MODULE
 -- ════════════════════════════════════════════════════════════
 local SaveModule = {}
 
@@ -535,7 +454,6 @@ function SaveModule.Save()
         return
     end
     
-    -- Check apakah executor support file functions
     if not isfolder or not makefolder or not writefile then
         notify("Error", "Executor doesn't support file functions!")
         print("[ERROR] Missing functions: isfolder, makefolder, or writefile")
@@ -546,7 +464,7 @@ function SaveModule.Save()
     local filename = "Recording_" .. os.date("%Y%m%d_%H%M%S") .. ".json"
     
     local data = {
-        version = "6.1",
+        version = "6.2",
         frameCount = #Recording.frames,
         recordRate = Config.recordRate,
         frames = {}
@@ -558,8 +476,7 @@ function SaveModule.Save()
         local vel = frame.vel
         local moveDir = frame.moveDir
         
-        -- PERBAIKAN: Save state sebagai NUMBER bukan object
-        local stateValue = 8  -- Default: Running
+        local stateValue = 8
         if frame.state then
             if type(frame.state) == "number" then
                 stateValue = frame.state
@@ -575,7 +492,7 @@ function SaveModule.Save()
             string.format("%.2f,%.2f,%.2f", moveDir.X, moveDir.Y, moveDir.Z),
             frame.jump and 1 or 0,
             frame.speed,
-            stateValue  -- Simpan sebagai number
+            stateValue
         })
     end
     
@@ -623,7 +540,6 @@ function SaveModule.Load(jsonData)
     
     RecordModule.Clear()
     
-    -- Decompress dengan error handling
     local loadedCount = 0
     for i, compressed in ipairs(data.frames) do
         local success, result = pcall(function()
@@ -638,11 +554,9 @@ function SaveModule.Load(jsonData)
                 tonumber(rot[1]), tonumber(rot[2]), tonumber(rot[3])
             )
             
-            -- PERBAIKAN: Load state sebagai number terus convert ke Enum
             local stateValue = compressed[7] or 8
-            local humanoidState = Enum.HumanoidStateType.Running  -- Default
+            local humanoidState = Enum.HumanoidStateType.Running
             
-            -- Convert number ke HumanoidStateType
             if stateValue == 0 then humanoidState = Enum.HumanoidStateType.FallingDown
             elseif stateValue == 1 then humanoidState = Enum.HumanoidStateType.Running
             elseif stateValue == 2 then humanoidState = Enum.HumanoidStateType.RunningNoPhysics
@@ -692,7 +606,6 @@ function SaveModule.Load(jsonData)
 end
 
 function SaveModule.LoadFromFile()
-    -- Check apakah executor support file functions
     if not isfolder or not listfiles or not readfile then
         notify("Error", "Executor doesn't support file functions!")
         print("[ERROR] Missing functions: isfolder, listfiles, or readfile")
@@ -700,7 +613,6 @@ function SaveModule.LoadFromFile()
         return
     end
     
-    -- Check folder exist DULU sebelum list
     if not isfolder(SaveFolder) then
         notify("Error", "No recordings folder!")
         print("[ERROR] Folder not found: " .. SaveFolder)
@@ -709,13 +621,11 @@ function SaveModule.LoadFromFile()
     end
     
     local success, result = pcall(function()
-        -- List all files dengan filter .json
         local allFiles = listfiles(SaveFolder)
         local files = {}
         
         print("[DEBUG] Total files in folder: " .. #allFiles)
         
-        -- Filter hanya file .json
         for _, file in ipairs(allFiles) do
             if file:match("%.json$") then
                 table.insert(files, file)
@@ -728,7 +638,6 @@ function SaveModule.LoadFromFile()
             print("[ERROR] .json files found: 0")
             print("[ERROR] Total files: " .. #allFiles)
             
-            -- Debug: print semua file yang ada
             if #allFiles > 0 then
                 print("[DEBUG] Files in folder:")
                 for i, file in ipairs(allFiles) do
@@ -742,10 +651,8 @@ function SaveModule.LoadFromFile()
             return false
         end
         
-        -- Sort files by name (newest first)
         table.sort(files, function(a, b) return a > b end)
         
-        -- Print semua file yang ditemukan
         print("╔═══════════════════════════════════════════════════╗")
         print("║  FOUND " .. #files .. " RECORDING FILE(S):")
         for i, file in ipairs(files) do
@@ -754,7 +661,6 @@ function SaveModule.LoadFromFile()
         end
         print("╚═══════════════════════════════════════════════════╝")
         
-        -- SHOW FILE PICKER UI
         SaveModule.ShowFilePicker(files)
         return true
     end)
@@ -766,9 +672,7 @@ function SaveModule.LoadFromFile()
     end
 end
 
--- NEW: File Picker UI
 function SaveModule.ShowFilePicker(files)
-    -- Destroy existing picker if any
     local existing = LP.PlayerGui:FindFirstChild("FilePickerGUI")
     if existing then existing:Destroy() end
     
@@ -778,14 +682,12 @@ function SaveModule.ShowFilePicker(files)
     sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     sg.Parent = LP.PlayerGui
     
-    -- Background blur
     local bg = Instance.new("Frame", sg)
     bg.Size = UDim2.new(1, 0, 1, 0)
     bg.BackgroundColor3 = Color3.new(0, 0, 0)
     bg.BackgroundTransparency = 0.5
     bg.BorderSizePixel = 0
     
-    -- Main picker frame
     local picker = Instance.new("Frame", bg)
     picker.Size = UDim2.new(0, 400, 0, 450)
     picker.Position = UDim2.new(0.5, -200, 0.5, -225)
@@ -797,7 +699,6 @@ function SaveModule.ShowFilePicker(files)
     stroke.Color = Color3.fromRGB(0, 255, 120)
     stroke.Thickness = 2
     
-    -- Header
     local header = Instance.new("Frame", picker)
     header.Size = UDim2.new(1, 0, 0, 45)
     header.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
@@ -820,7 +721,6 @@ function SaveModule.ShowFilePicker(files)
     title.TextSize = 16
     title.TextXAlignment = Enum.TextXAlignment.Left
     
-    -- Close button
     local closeBtn = Instance.new("TextButton", header)
     closeBtn.Size = UDim2.new(0, 35, 0, 35)
     closeBtn.Position = UDim2.new(1, -40, 0, 5)
@@ -833,7 +733,6 @@ function SaveModule.ShowFilePicker(files)
         sg:Destroy()
     end)
     
-    -- Scroll frame untuk file list
     local scroll = Instance.new("ScrollingFrame", picker)
     scroll.Size = UDim2.new(1, -20, 1, -95)
     scroll.Position = UDim2.new(0, 10, 0, 55)
@@ -847,11 +746,9 @@ function SaveModule.ShowFilePicker(files)
     layout.Padding = UDim.new(0, 5)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     
-    -- Add file buttons
     for i, filePath in ipairs(files) do
         local filename = filePath:match("([^/\\]+)$") or filePath
         
-        -- Parse date from filename
         local dateStr = filename:match("Recording_(%d+_%d+)")
         local displayName = filename
         if dateStr then
@@ -891,7 +788,6 @@ function SaveModule.ShowFilePicker(files)
         fileLabel.TextSize = 9
         fileLabel.TextXAlignment = Enum.TextXAlignment.Left
         
-        -- Hover effect
         btn.MouseEnter:Connect(function()
             btn.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
             nameLabel.TextColor3 = Color3.new(0, 0, 0)
@@ -904,7 +800,6 @@ function SaveModule.ShowFilePicker(files)
             fileLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
         end)
         
-        -- Load file on click
         btn.MouseButton1Click:Connect(function()
             sg:Destroy()
             
@@ -925,13 +820,11 @@ function SaveModule.ShowFilePicker(files)
         end)
     end
     
-    -- Update scroll canvas size
     layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
     end)
     scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
     
-    -- Cancel button
     local cancelBtn = Instance.new("TextButton", picker)
     cancelBtn.Size = UDim2.new(1, -20, 0, 35)
     cancelBtn.Position = UDim2.new(0, 10, 1, -45)
@@ -949,7 +842,7 @@ function SaveModule.ShowFilePicker(files)
 end
 
 -- ════════════════════════════════════════════════════════════
--- UI SYSTEM (COMPACT & DRAGGABLE MINIMIZE - FIXED)
+-- UI SYSTEM (TAB-BASED WITH RECORD/REPLAY PAGES)
 -- ════════════════════════════════════════════════════════════
 local GUI = {}
 
@@ -960,17 +853,17 @@ function GUI.Create()
     sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     sg.Parent = LP:WaitForChild("PlayerGui")
     
-    -- MINIMIZED ICON (Bulat kecil yang bisa di-drag) - BUAT DULU!
+    -- MINIMIZED ICON
     local miniIcon = Instance.new("Frame", sg)
     miniIcon.Name = "MiniIcon"
-    miniIcon.Size = UDim2.new(0, 55, 0, 55)  -- Icon bulat 55x55
-    miniIcon.Position = UDim2.new(0.02, 0, 0.5, -27)  -- Tengah kiri layar
+    miniIcon.Size = UDim2.new(0, 55, 0, 55)
+    miniIcon.Position = UDim2.new(0.02, 0, 0.5, -27)
     miniIcon.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
     miniIcon.BorderSizePixel = 0
-    miniIcon.Visible = false  -- Hidden by default
+    miniIcon.Visible = false
     miniIcon.Active = true
     miniIcon.ZIndex = 999
-    Instance.new("UICorner", miniIcon).CornerRadius = UDim.new(1, 0)  -- Full circle
+    Instance.new("UICorner", miniIcon).CornerRadius = UDim.new(1, 0)
     
     local miniStroke = Instance.new("UIStroke", miniIcon)
     miniStroke.Color = Color3.fromRGB(255, 255, 255)
@@ -985,24 +878,24 @@ function GUI.Create()
     miniLabel.TextSize = 28
     miniLabel.ZIndex = 1000
     
-    -- Main Frame (COMPACT SIZE)
+    -- Main Frame
     local main = Instance.new("Frame", sg)
     main.Name = "Main"
-    main.Size = UDim2.new(0, 220, 0, 265)  -- Lebih kecil lagi
+    main.Size = UDim2.new(0, 220, 0, 280)
     main.Position = UDim2.new(0.98, -220, 0.02, 0)
     main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     main.BorderSizePixel = 0
     main.Active = true
-    main.ClipsDescendants = true  -- PENTING: Prevent overflow!
+    main.ClipsDescendants = true
     Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
     
     local stroke = Instance.new("UIStroke", main)
     stroke.Color = Color3.fromRGB(0, 255, 120)
     stroke.Thickness = 2
     
-    -- Header (SMALLER)
+    -- Header
     local header = Instance.new("Frame", main)
-    header.Size = UDim2.new(1, 0, 0, 28)  -- Lebih kecil
+    header.Size = UDim2.new(1, 0, 0, 28)
     header.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
     header.BorderSizePixel = 0
     Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
@@ -1020,7 +913,7 @@ function GUI.Create()
     title.Text = "🎬 Auto Walk"
     title.TextColor3 = Color3.new(0, 0, 0)
     title.Font = Enum.Font.GothamBold
-    title.TextSize = 11  -- Lebih kecil
+    title.TextSize = 11
     title.TextXAlignment = Enum.TextXAlignment.Left
     
     -- Hide button
@@ -1044,46 +937,85 @@ function GUI.Create()
     closeBtn.TextSize = 11
     closeBtn.BackgroundTransparency = 1
     closeBtn.MouseButton1Click:Connect(function()
-        sg:Destroy()
+        State.guiVisible = false
+        main.Visible = false
+        miniIcon.Visible = true
+        miniIcon.Position = UDim2.new(0, main.AbsolutePosition.X, 0, main.AbsolutePosition.Y)
+        notify("Hidden", "Press H to show")
     end)
+    
+    -- TAB CONTAINER
+    local tabContainer = Instance.new("Frame", main)
+    tabContainer.Name = "TabContainer"
+    tabContainer.Size = UDim2.new(1, -10, 0, 28)
+    tabContainer.Position = UDim2.new(0, 5, 0, 33)
+    tabContainer.BackgroundTransparency = 1
+    
+    -- RECORD TAB
+    local recordTab = Instance.new("TextButton", tabContainer)
+    recordTab.Name = "RecordTab"
+    recordTab.Size = UDim2.new(0.5, -2, 1, 0)
+    recordTab.Position = UDim2.new(0, 0, 0, 0)
+    recordTab.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+    recordTab.BorderSizePixel = 0
+    recordTab.Font = Enum.Font.GothamBold
+    recordTab.TextSize = 10
+    recordTab.TextColor3 = Color3.new(0, 0, 0)
+    recordTab.Text = "🎬 RECORD"
+    recordTab.AutoButtonColor = false
+    Instance.new("UICorner", recordTab).CornerRadius = UDim.new(0, 6)
+    
+    -- REPLAY TAB
+    local replayTab = Instance.new("TextButton", tabContainer)
+    replayTab.Name = "ReplayTab"
+    replayTab.Size = UDim2.new(0.5, -2, 1, 0)
+    replayTab.Position = UDim2.new(0.5, 2, 0, 0)
+    replayTab.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    replayTab.BorderSizePixel = 0
+    replayTab.Font = Enum.Font.GothamBold
+    replayTab.TextSize = 10
+    replayTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    replayTab.Text = "📺 REPLAY"
+    replayTab.AutoButtonColor = false
+    Instance.new("UICorner", replayTab).CornerRadius = UDim.new(0, 6)
     
     -- Content container
     local content = Instance.new("Frame", main)
     content.Name = "Content"
-    content.Size = UDim2.new(1, 0, 1, -28)
-    content.Position = UDim2.new(0, 0, 0, 28)
+    content.Size = UDim2.new(1, 0, 1, -66)
+    content.Position = UDim2.new(0, 0, 0, 66)
     content.BackgroundTransparency = 1
-    content.ClipsDescendants = true  -- PENTING!
+    content.ClipsDescendants = true
     
-    -- Status Label (COMPACT)
+    -- Status Label
     local statusLabel = Instance.new("TextLabel", content)
     statusLabel.Name = "Status"
-    statusLabel.Size = UDim2.new(1, -10, 0, 16)  -- Lebih kecil
+    statusLabel.Size = UDim2.new(1, -10, 0, 16)
     statusLabel.Position = UDim2.new(0, 5, 0, 5)
     statusLabel.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
     statusLabel.Text = "⏹ Ready"
     statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
     statusLabel.Font = Enum.Font.GothamBold
-    statusLabel.TextSize = 9  -- Lebih kecil
+    statusLabel.TextSize = 9
     statusLabel.TextWrapped = true
     statusLabel.TextScaled = false
     Instance.new("UICorner", statusLabel).CornerRadius = UDim.new(0, 4)
     
-    -- Info Label (COMPACT)
+    -- Info Label
     local infoLabel = Instance.new("TextLabel", content)
     infoLabel.Name = "Info"
-    infoLabel.Size = UDim2.new(1, -10, 0, 12)  -- Lebih kecil
+    infoLabel.Size = UDim2.new(1, -10, 0, 12)
     infoLabel.Position = UDim2.new(0, 5, 0, 24)
     infoLabel.BackgroundTransparency = 1
     infoLabel.Text = "Frames: 0 | Time: 00:00"
     infoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
     infoLabel.Font = Enum.Font.Gotham
-    infoLabel.TextSize = 7  -- Lebih kecil
+    infoLabel.TextSize = 7
     infoLabel.TextXAlignment = Enum.TextXAlignment.Left
     infoLabel.TextWrapped = true
     infoLabel.TextScaled = false
     
-    -- Progress Bar (COMPACT)
+    -- Progress Bar
     local progressBG = Instance.new("Frame", content)
     progressBG.Size = UDim2.new(1, -10, 0, 2)
     progressBG.Position = UDim2.new(0, 5, 0, 39)
@@ -1098,16 +1030,31 @@ function GUI.Create()
     progressBar.BorderSizePixel = 0
     Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
     
-    -- Buttons Container (COMPACT)
-    local btnContainer = Instance.new("Frame", content)
-    btnContainer.Size = UDim2.new(1, -10, 1, -46)  -- Dynamic height
-    btnContainer.Position = UDim2.new(0, 5, 0, 44)
-    btnContainer.BackgroundTransparency = 1
-    btnContainer.ClipsDescendants = true  -- PENTING!
+    -- RECORD PAGE CONTAINER
+    local recordPage = Instance.new("Frame", content)
+    recordPage.Name = "RecordPage"
+    recordPage.Size = UDim2.new(1, -10, 1, -46)
+    recordPage.Position = UDim2.new(0, 5, 0, 44)
+    recordPage.BackgroundTransparency = 1
+    recordPage.Visible = true
+    recordPage.ClipsDescendants = true
     
-    local layout = Instance.new("UIListLayout", btnContainer)
-    layout.Padding = UDim.new(0, 3)  -- Spacing lebih kecil
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    local recordLayout = Instance.new("UIListLayout", recordPage)
+    recordLayout.Padding = UDim.new(0, 3)
+    recordLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+    -- REPLAY PAGE CONTAINER
+    local replayPage = Instance.new("Frame", content)
+    replayPage.Name = "ReplayPage"
+    replayPage.Size = UDim2.new(1, -10, 1, -46)
+    replayPage.Position = UDim2.new(0, 5, 0, 44)
+    replayPage.BackgroundTransparency = 1
+    replayPage.Visible = false
+    replayPage.ClipsDescendants = true
+    
+    local replayLayout = Instance.new("UIListLayout", replayPage)
+    replayLayout.Padding = UDim.new(0, 3)
+    replayLayout.SortOrder = Enum.SortOrder.LayoutOrder
     
     -- Click mini icon to expand
     local miniBtn = Instance.new("TextButton", miniIcon)
@@ -1119,25 +1066,14 @@ function GUI.Create()
         State.guiVisible = true
         miniIcon.Visible = false
         main.Visible = true
-        print("[GUI] Expanded from mini icon")
     end)
     
     -- Hide/Show functionality
     hideBtn.MouseButton1Click:Connect(function()
-        State.guiVisible = not State.guiVisible
-        
-        if State.guiVisible then
-            miniIcon.Visible = false
-            main.Visible = true
-            print("[GUI] Showing main window")
-        else
-            -- Minimize to icon
-            main.Visible = false
-            miniIcon.Visible = true
-            -- Set icon position near where main was
-            miniIcon.Position = UDim2.new(0, main.AbsolutePosition.X, 0, main.AbsolutePosition.Y)
-            print("[GUI] Minimized to icon")
-        end
+        State.guiVisible = false
+        main.Visible = false
+        miniIcon.Visible = true
+        miniIcon.Position = UDim2.new(0, main.AbsolutePosition.X, 0, main.AbsolutePosition.Y)
     end)
     
     GUI.Main = main
@@ -1145,28 +1081,97 @@ function GUI.Create()
     GUI.StatusLabel = statusLabel
     GUI.InfoLabel = infoLabel
     GUI.ProgressBar = progressBar
-    GUI.ButtonContainer = btnContainer
+    GUI.RecordPage = recordPage
+    GUI.ReplayPage = replayPage
+    GUI.RecordTab = recordTab
+    GUI.ReplayTab = replayTab
     GUI.MiniIcon = miniIcon
     
     return sg
 end
 
-function GUI.CreateButton(text, color, callback)
+-- TAB SWITCHING
+function GUI.SwitchToRecord()
+    GUI.RecordTab.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+    GUI.RecordTab.TextColor3 = Color3.new(0, 0, 0)
+    
+    GUI.ReplayTab.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    GUI.ReplayTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    
+    GUI.RecordPage.Visible = true
+    GUI.ReplayPage.Visible = false
+    
+    print("[GUI] Switched to RECORD mode")
+end
+
+function GUI.SwitchToReplay()
+    GUI.ReplayTab.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+    GUI.ReplayTab.TextColor3 = Color3.new(0, 0, 0)
+    
+    GUI.RecordTab.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    GUI.RecordTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    
+    GUI.RecordPage.Visible = false
+    GUI.ReplayPage.Visible = true
+    
+    print("[GUI] Switched to REPLAY mode")
+end
+
+-- Create button for specific page
+function GUI.CreateButton(text, color, callback, page)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 24)  -- Lebih kecil
+    btn.Size = UDim2.new(1, 0, 0, 24)
     btn.BackgroundColor3 = color
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 9  -- Lebih kecil
+    btn.TextSize = 9
     btn.TextColor3 = Color3.new(1, 1, 1)
     btn.Text = text
     btn.TextWrapped = true
     btn.TextScaled = false
-    btn.Parent = GUI.ButtonContainer
+    btn.Parent = page
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
     
     btn.MouseButton1Click:Connect(callback)
     return btn
+end
+
+-- Create speed button
+function GUI.CreateSpeedButton(speed, parent)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.23, 0, 0, 22)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 9
+    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    btn.Text = speed .. "x"
+    btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    
+    btn.MouseButton1Click:Connect(function()
+        SpeedModule.SetSpeed(speed)
+        GUI.UpdateSpeedButtons()
+    end)
+    
+    return btn
+end
+
+-- Update speed button visuals
+function GUI.UpdateSpeedButtons()
+    if not GUI.SpeedButtons then return end
+    
+    for speed, btn in pairs(GUI.SpeedButtons) do
+        if speed == Config.playbackSpeed then
+            btn.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+            btn.TextColor3 = Color3.new(0, 0, 0)
+            btn.Text = "●" .. speed .. "x"
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+            btn.Text = speed .. "x"
+        end
+    end
 end
 
 function GUI.MakeDraggable(frame)
@@ -1235,24 +1240,50 @@ end
 -- ════════════════════════════════════════════════════════════
 local mainGUI = GUI.Create()
 GUI.MakeDraggable(GUI.Main)
-GUI.MakeDraggable(GUI.MiniIcon)  -- Mini icon juga bisa di-drag!
+GUI.MakeDraggable(GUI.MiniIcon)
 
--- Create Buttons
+-- TAB CLICK HANDLERS
+GUI.RecordTab.MouseButton1Click:Connect(function()
+    GUI.SwitchToRecord()
+end)
+
+GUI.ReplayTab.MouseButton1Click:Connect(function()
+    GUI.SwitchToReplay()
+end)
+
+-- ════════════════════════════════════════════════════════════
+-- RECORD PAGE BUTTONS
+-- ════════════════════════════════════════════════════════════
 GUI.CreateButton("⏺ Record / Stop (R)", Color3.fromRGB(220, 50, 50), function()
     if State.recording then
         RecordModule.Stop()
     else
         RecordModule.Start()
     end
-end)
+end, GUI.RecordPage)
 
 GUI.CreateButton("⏸ Pause / Resume (Space)", Color3.fromRGB(200, 150, 50), function()
-    if State.recording then
-        RecordModule.TogglePause()
-    elseif State.replaying then
-        ReplayModule.TogglePause()
-    end
-end)
+    RecordModule.TogglePause()
+end, GUI.RecordPage)
+
+GUI.CreateButton("⏪ Rewind 2s (Backspace)", Color3.fromRGB(255, 150, 0), function()
+    RewindModule.StepBack()
+end, GUI.RecordPage)
+
+GUI.CreateButton("💾 Save Recording", Color3.fromRGB(0, 150, 200), function()
+    SaveModule.Save()
+end, GUI.RecordPage)
+
+GUI.CreateButton("🗑️ Clear Recording", Color3.fromRGB(200, 50, 50), function()
+    RecordModule.Clear()
+end, GUI.RecordPage)
+
+-- ════════════════════════════════════════════════════════════
+-- REPLAY PAGE BUTTONS
+-- ════════════════════════════════════════════════════════════
+GUI.CreateButton("📥 Load Recording", Color3.fromRGB(0, 200, 150), function()
+    SaveModule.LoadFromFile()
+end, GUI.ReplayPage)
 
 GUI.CreateButton("▶ Play / Stop (P)", Color3.fromRGB(50, 200, 50), function()
     if State.replaying then
@@ -1260,27 +1291,40 @@ GUI.CreateButton("▶ Play / Stop (P)", Color3.fromRGB(50, 200, 50), function()
     else
         ReplayModule.Play()
     end
-end)
+end, GUI.ReplayPage)
 
-GUI.CreateButton("⏪ Back 2s (Backspace)", Color3.fromRGB(255, 150, 0), function()
-    RewindModule.StepBack()
-end)
+-- SPEED CONTROL LABEL
+local speedLabel = Instance.new("TextLabel", GUI.ReplayPage)
+speedLabel.Size = UDim2.new(1, 0, 0, 16)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text = "⚡ Playback Speed:"
+speedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+speedLabel.Font = Enum.Font.GothamBold
+speedLabel.TextSize = 8
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.LayoutOrder = 100
 
-GUI.CreateButton("⚡ Speed: 1.0x (+ / -)", Color3.fromRGB(100, 100, 255), function()
-    SpeedModule.Reset()
-end)
+-- SPEED BUTTONS CONTAINER
+local speedContainer = Instance.new("Frame", GUI.ReplayPage)
+speedContainer.Size = UDim2.new(1, 0, 0, 22)
+speedContainer.BackgroundTransparency = 1
+speedContainer.LayoutOrder = 101
 
-GUI.CreateButton("💾 Save Recording", Color3.fromRGB(0, 150, 200), function()
-    SaveModule.Save()
-end)
+local speedLayout = Instance.new("UIListLayout", speedContainer)
+speedLayout.FillDirection = Enum.FillDirection.Horizontal
+speedLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+speedLayout.Padding = UDim.new(0, 3)
 
-GUI.CreateButton("📥 Load Latest", Color3.fromRGB(0, 200, 150), function()
-    SaveModule.LoadFromFile()
-end)
+-- CREATE SPEED BUTTONS
+GUI.SpeedButtons = {}
+local speeds = {0.5, 0.75, 1.0, 1.5}
 
-GUI.CreateButton("🗑️ Clear Recording", Color3.fromRGB(200, 50, 50), function()
-    RecordModule.Clear()
-end)
+for _, speed in ipairs(speeds) do
+    local btn = GUI.CreateSpeedButton(speed, speedContainer)
+    GUI.SpeedButtons[speed] = btn
+end
+
+GUI.UpdateSpeedButtons()
 
 -- ════════════════════════════════════════════════════════════
 -- KEYBINDS
@@ -1299,8 +1343,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if input.KeyCode == Enum.KeyCode.Space then
         if State.recording then
             RecordModule.TogglePause()
-        elseif State.replaying then
-            ReplayModule.TogglePause()
         end
     end
     
@@ -1316,19 +1358,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         RewindModule.StepBack()
     end
     
-    -- + = Speed up
-    if input.KeyCode == Enum.KeyCode.Equals or input.KeyCode == Enum.KeyCode.Plus then
-        SpeedModule.Increase()
+    -- Tab shortcuts
+    if input.KeyCode == Enum.KeyCode.One or input.KeyCode == Enum.KeyCode.KeypadOne then
+        GUI.SwitchToRecord()
     end
     
-    -- - = Speed down
-    if input.KeyCode == Enum.KeyCode.Minus then
-        SpeedModule.Decrease()
-    end
-    
-    -- 0 = Reset speed
-    if input.KeyCode == Enum.KeyCode.Zero then
-        SpeedModule.Reset()
+    if input.KeyCode == Enum.KeyCode.Two or input.KeyCode == Enum.KeyCode.KeypadTwo then
+        GUI.SwitchToReplay()
     end
     
     if input.KeyCode == Enum.KeyCode.S and input:IsModifierKeyDown(Enum.ModifierKey.Ctrl) then
@@ -1364,8 +1400,6 @@ end)
 -- ════════════════════════════════════════════════════════════
 -- STARTUP
 -- ════════════════════════════════════════════════════════════
-
--- Detect workspace path for executor
 if isfolder and makefolder then
     getWorkspacePath()
     print("[INFO] Using save folder: " .. SaveFolder)
@@ -1376,24 +1410,23 @@ updateStatus("⏹ Ready")
 updateUI()
 
 print("╔═══════════════════════════════════════════════════╗")
-print("║  SMOOTH AUTO WALK V6.2 - SPEED CONTROL          ║")
+print("║  SMOOTH AUTO WALK V6.2 - TAB SYSTEM             ║")
 print("╠═══════════════════════════════════════════════════╣")
 print("║  KEYBINDS:                                        ║")
 print("║  R         = Record/Stop                          ║")
-print("║  Space     = Pause/Resume                         ║")
+print("║  Space     = Pause/Resume (Record only)           ║")
 print("║  P         = Play/Stop                            ║")
-print("║  Backspace = Rewind 1 second (paused only)        ║")
-print("║  +         = Speed up (0.25x → 3.0x)              ║")
-print("║  -         = Speed down                           ║")
-print("║  0         = Reset speed to 1.0x                  ║")
+print("║  Backspace = Rewind 2s (paused only)              ║")
+print("║  1         = Switch to RECORD tab                 ║")
+print("║  2         = Switch to REPLAY tab                 ║")
 print("║  H         = Hide/Show GUI                        ║")
 print("║  Ctrl+S    = Quick Save                           ║")
 print("╠═══════════════════════════════════════════════════╣")
 print("║  NEW FEATURES:                                    ║")
-print("║  ✅ Playback speed control (0.25x - 3.0x)         ║")
+print("║  ✅ Tab-based UI (Record / Replay)                ║")
+print("║  ✅ Speed selector buttons (0.5x - 1.5x)          ║")
+print("║  ✅ Pause only available in Record mode           ║")
 print("║  ✅ Smart start position detection                ║")
-print("║  ✅ Balanced smooth & natural movement            ║")
-print("║  ✅ File picker with date display                 ║")
 print("╠═══════════════════════════════════════════════════╣")
 print("║  EXECUTOR COMPATIBILITY:                          ║")
 print("║  ✅ Supports file functions: " .. tostring(writefile ~= nil))
@@ -1401,12 +1434,12 @@ print("║  ✅ Folder management: " .. tostring(isfolder ~= nil))
 print("║  ✅ File listing: " .. tostring(listfiles ~= nil))
 print("╚═══════════════════════════════════════════════════╝")
 
--- Test file functions saat startup
 if not writefile or not isfolder or not listfiles then
     notify("Warning", "File functions not supported!")
     print("[WARNING] Your executor doesn't support file save/load")
     print("[TIP] You can still use the script, but can't save recordings")
 else
     print("[SUCCESS] All file functions are available!")
-    print("[TIP] Press Ctrl+S to save, click 📥 Load Latest to load")
+    print("[TIP] Use the tab system: 1=Record, 2=Replay")
+    print("[TIP] Speed buttons available in Replay tab")
 end
